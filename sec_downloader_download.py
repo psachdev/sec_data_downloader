@@ -2,7 +2,7 @@ from sec_edgar_downloader import Downloader
 import os
 
 # Initialize downloader
-dl = Downloader("FUNAIBUDDY", "spreadhappinesstoall062@gmail.com")
+dl = Downloader("YOUR NAME", "email@address.com")
 
 # Download 10-K filings for specific companies
 companies = ["PGR", "BRK-B", "KNSL", "COST"]
