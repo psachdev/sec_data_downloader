@@ -1,0 +1,37 @@
+Company: Rafael Holdings, Inc.
+Filing Date: 2025-01-08T13:01:34-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1713863/000121390025001971/ea0227013-10ka2_rafael.htm
+--------------------------------------------------
+Company: BeiGene, Ltd.
+Filing Date: 2025-01-08T06:02:32-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1651308/000165130825000005/bgne-20231231.htm
+--------------------------------------------------
+Company: Graphene & Solar Technologies Ltd
+Filing Date: 2025-01-07T17:43:28-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1497649/000190359625000020/gstx_nt10k.htm
+--------------------------------------------------
+Company: Zhuoxun Hongtu Inc.
+Filing Date: 2025-01-06T17:48:24-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1639327/000121390025001262/ea0226243-10k_zhuoxun.htm
+--------------------------------------------------
+Company: Born, Inc.
+Filing Date: 2025-01-06T08:40:44-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1397795/000121390025000956/ea0226176-10k_borninc.htm
+--------------------------------------------------
+Company: Born, Inc.
+Filing Date: 2025-01-03T14:49:57-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1397795/000121390025000675/ea0226045-10k_borninc.htm
+--------------------------------------------------
+Company: KHEOBA CORP.
+Filing Date: 2025-01-03T11:37:25-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1909770/000147793225000026/kheo_10k.htm
+--------------------------------------------------
+Company: Amesite Inc.
+Filing Date: 2025-01-02T17:15:34-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1807166/000121390025000438/ea0226561-10ka1_amesite.htm
+--------------------------------------------------
+Company: Zhuoxun Hongtu Inc.
+Filing Date: 2025-01-02T06:00:44-05:00
+URL: https://www.sec.gov/Archives/edgar/data/1639327/000121390025000002/ea0226316-nt10k_zhuoxun.htm
+--------------------------------------------------
+
