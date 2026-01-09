@@ -175,7 +175,7 @@ USER_AGENT = "Your Name/Company your-email@example.com"
 
 * [SEC EDGAR API Documentation](https://www.sec.gov/edgar/sec-api-documentation)
 * [sec-api.io Official Docs](https://sec-api.io/docs)
-* [sec-edgar-downloader Documentation]([https://sec-edgar-downloader.readthedocs.io/](https://sec-edgar-downloader.readthedocs.io/)
+* [sec-edgar-downloader Documentation](https://sec-edgar-downloader.readthedocs.io/)
 
 ## ⚖️ Legal & Compliance
 
