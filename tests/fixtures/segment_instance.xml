@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20260930"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <xbrli:unit id="usd">
+    <xbrli:measure>iso4217:USD</xbrli:measure>
+  </xbrli:unit>
+  <xbrli:unit id="pure">
+    <xbrli:measure>xbrli:pure</xbrli:measure>
+  </xbrli:unit>
+
+  <!-- Consolidated, current quarter -->
+  <xbrli:context id="C_Q3_2026">
+    <xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0001156375</xbrli:identifier></xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2026-07-01</xbrli:startDate>
+      <xbrli:endDate>2026-09-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <!-- Consolidated, prior-year quarter -->
+  <xbrli:context id="C_Q3_2025">
+    <xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0001156375</xbrli:identifier></xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2025-07-01</xbrli:startDate>
+      <xbrli:endDate>2025-09-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <!-- Government Operations, current quarter -->
+  <xbrli:context id="C_Q3_2026_GOV">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.sec.gov/CIK">0001156375</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:GovernmentOperationsMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2026-07-01</xbrli:startDate>
+      <xbrli:endDate>2026-09-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <!-- Government Operations, prior-year quarter -->
+  <xbrli:context id="C_Q3_2025_GOV">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.sec.gov/CIK">0001156375</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:GovernmentOperationsMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2025-07-01</xbrli:startDate>
+      <xbrli:endDate>2025-09-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <!-- Commercial Operations, current quarter -->
+  <xbrli:context id="C_Q3_2026_COM">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.sec.gov/CIK">0001156375</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:CommercialOperationsMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2026-07-01</xbrli:startDate>
+      <xbrli:endDate>2026-09-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <!-- Two dimensions at once: segment plus geography -->
+  <xbrli:context id="C_Q3_2026_GOV_US">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.sec.gov/CIK">0001156375</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:GovernmentOperationsMember</xbrldi:explicitMember>
+        <xbrldi:explicitMember dimension="srt:StatementGeographicalAxis">country:US</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2026-07-01</xbrli:startDate>
+      <xbrli:endDate>2026-09-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <!-- Instant context for a balance -->
+  <xbrli:context id="C_INSTANT_2026">
+    <xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0001156375</xbrli:identifier></xbrli:entity>
+    <xbrli:period><xbrli:instant>2026-09-30</xbrli:instant></xbrli:period>
+  </xbrli:context>
+
+  <!-- Facts -->
+  <us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="C_Q3_2026" unitRef="usd" decimals="-5">896000000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax>
+  <us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="C_Q3_2025" unitRef="usd" decimals="-5">840000000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax>
+  <us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="C_Q3_2026_GOV" unitRef="usd" decimals="-5">612400000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax>
+  <us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="C_Q3_2025_GOV" unitRef="usd" decimals="-5">571000000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax>
+  <us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="C_Q3_2026_COM" unitRef="usd" decimals="-5">283600000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax>
+  <us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="C_Q3_2026_GOV_US" unitRef="usd" decimals="-5">590000000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax>
+
+  <us-gaap:OperatingIncomeLoss contextRef="C_Q3_2026_GOV" unitRef="usd" decimals="-5">120000000</us-gaap:OperatingIncomeLoss>
+  <us-gaap:Assets contextRef="C_INSTANT_2026" unitRef="usd" decimals="-5">4200000000</us-gaap:Assets>
+
+  <!-- A nil fact: must be skipped, not read as zero -->
+  <us-gaap:RestructuringCharges contextRef="C_Q3_2026" unitRef="usd" xsi:nil="true"/>
+
+  <!-- A text fact with no unit -->
+  <demo:SegmentDescription contextRef="C_Q3_2026_GOV">Naval nuclear reactors and related components.</demo:SegmentDescription>
+
+</xbrl>
