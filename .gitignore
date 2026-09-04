@@ -1,0 +1,11 @@
+.DS_Store
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+10K_downloads/
+sec-edgar-filings/
+income_table_*.tsv
+*.egg-info/
