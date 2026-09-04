@@ -113,6 +113,14 @@ class Fact:
         return self.context.dimension_dict()
 
     @property
+    def is_actual(self) -> bool:
+        """False when the fact is guidance, pro-forma, or as-previously-reported."""
+        return not any(
+            axis.rpartition(":")[2] in NON_ACTUAL_AXES
+            for axis, _ in self.context.dimensions
+        )
+
+    @property
     def period(self) -> Period:
         return self.context.period
 
@@ -346,6 +354,20 @@ QUALIFIER_AXES: dict[str, frozenset[str]] = {
 }
 
 
+# Axes marking a fact as something other than a reported result: guidance,
+# pro-forma, or previously-reported restatement figures. Sterling tags
+# StatementScenarioAxis=ScenarioForecastMember, so a forecast can carry the
+# same concept and period as an actual. Resolving a kill criterion against a
+# forecast would settle it on a number that has not happened.
+NON_ACTUAL_AXES: frozenset[str] = frozenset(
+    {
+        "StatementScenarioAxis",
+        "NonrecurringAdjustmentAxis",
+        "CreationDateAxis",
+    }
+)
+
+
 def dimension_shapes(
     instance: "Instance", concept: str
 ) -> list[tuple[tuple[str, ...], int]]:
@@ -362,7 +384,7 @@ def dimension_shapes(
     return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
-def _strip_qualifiers(fact: Fact) -> set[str] | None:
+def _strip_qualifiers(fact: Fact, drop_non_actual: bool = False) -> set[str] | None:
     """Axes remaining after removing pure qualifiers. None if a qualifier axis
     carries a partitioning member, which disqualifies the fact entirely."""
     remaining = set()
@@ -374,6 +396,8 @@ def _strip_qualifiers(fact: Fact) -> set[str] | None:
             if member_name not in allowed:
                 return None  # e.g. IntersegmentEliminationMember
             continue
+        if drop_non_actual and axis_name in NON_ACTUAL_AXES:
+            continue
         remaining.add(axis_name)
     return remaining
 
@@ -382,8 +406,9 @@ def segment_totals(
     instance: "Instance",
     concept: str,
     axis: str = "StatementBusinessSegmentsAxis",
+    include_non_actual: bool = False,
 ) -> list[Fact]:
-    """Segment totals only, excluding breakdowns within each segment.
+    """Reported segment totals only, excluding breakdowns within each segment.
 
     Keeps facts whose only partitioning axis is ``axis``, after removing
     qualifier axes (see :data:`QUALIFIER_AXES`). Guards two live traps:
@@ -396,12 +421,19 @@ def segment_totals(
        ``CommercialOperationsSegmentMember``. Matching on the member name
        rather than the axis picks a figure roughly six times too small.
 
+    3. Guidance and pro-forma figures are tagged with the same concept and
+       period as actuals, distinguished only by an axis. Sterling tags
+       ``StatementScenarioAxis=ScenarioForecastMember``. Those are dropped
+       unless ``include_non_actual`` is set.
+
     If this returns nothing, call :func:`dimension_shapes` to see how the
     filer actually tags the concept.
     """
     results = []
     for fact in instance.query(concept=concept, axis=axis, numeric_only=True):
-        remaining = _strip_qualifiers(fact)
+        if not include_non_actual and not fact.is_actual:
+            continue
+        remaining = _strip_qualifiers(fact, drop_non_actual=include_non_actual)
         if remaining == {axis}:
             results.append(fact)
     return results
@@ -419,6 +451,8 @@ def summarize(facts: Sequence[Fact]) -> list[dict]:
             "period_end": fact.period.instant or fact.period.end,
             "context_id": fact.context.context_id,
         }
+        if not fact.is_actual:
+            row["is_actual"] = False
         for axis, member in fact.context.dimensions:
             row[axis.rpartition(":")[2]] = member.rpartition(":")[2]
         rows.append(row)
