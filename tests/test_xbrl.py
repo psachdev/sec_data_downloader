@@ -425,3 +425,59 @@ def test_dimension_shapes_reports_all_combinations(qualified):
         "StatementBusinessSegmentsAxis",
         "TimingOfTransferOfGoodOrServiceAxis",
     ) in shapes
+
+
+FORECAST_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20251231">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="ACTUAL">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="FORECAST">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementScenarioAxis">us-gaap:ScenarioForecastMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="ACTUAL" unitRef="usd">1466777000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="FORECAST" unitRef="usd">1600000000</us-gaap:Revenues>
+</xbrl>
+"""
+
+
+@pytest.fixture(scope="module")
+def forecasts() -> Instance:
+    return Instance.from_bytes(FORECAST_FIXTURE)
+
+
+def test_forecast_excluded_from_segment_totals(forecasts):
+    """Guidance carries the same concept and period as the actual.
+
+    Sterling tags StatementScenarioAxis=ScenarioForecastMember. Resolving a
+    kill criterion against a forecast settles it on a number that has not
+    happened yet.
+    """
+    totals = segment_totals(forecasts, "Revenues")
+    assert len(totals) == 1
+    assert int(totals[0].numeric) == 1_466_777_000
+
+
+def test_forecast_reachable_when_asked(forecasts):
+    both = segment_totals(forecasts, "Revenues", include_non_actual=True)
+    assert len(both) == 2
+    assert sum(1 for f in both if not f.is_actual) == 1
+
+
+def test_is_actual_flag(forecasts):
+    facts = forecasts.query(concept="Revenues")
+    assert sorted(f.is_actual for f in facts) == [False, True]
