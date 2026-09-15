@@ -349,9 +349,35 @@ class Instance:
 # the axis only says "this is segment-level, not corporate or eliminations".
 # Other members on the same axis (IntersegmentEliminationMember,
 # CorporateNonSegmentMember) DO partition, so the member is checked too.
+# Members of ConsolidationItemsAxis that mark a fact as a segment TOTAL
+# rather than a reconciling item. These are alternative definitions, not
+# synonyms: GE Vernova's FY2025 Power revenue is 19,767,000,000 excluding
+# intersegment sales and 20,043,000,000 including them -- 1.4% apart, both
+# correct. When a filing carries more than one, the criterion has to say
+# which it means; segment_totals raises rather than picking.
+SEGMENT_TOTAL_MEMBERS: frozenset[str] = frozenset(
+    {
+        "OperatingSegmentsMember",
+        "OperatingSegmentsExcludingIntersegmentEliminationMember",
+    }
+)
+
 QUALIFIER_AXES: dict[str, frozenset[str]] = {
-    "ConsolidationItemsAxis": frozenset({"OperatingSegmentsMember"}),
+    "ConsolidationItemsAxis": SEGMENT_TOTAL_MEMBERS,
 }
+
+
+class AmbiguousConsolidation(ValueError):
+    """The filing reports segment totals under more than one definition."""
+
+    def __init__(self, members: list[str]) -> None:
+        self.members = members
+        super().__init__(
+            "This filing reports segment totals under more than one "
+            "ConsolidationItemsAxis member, which are different measurements: "
+            + ", ".join(members)
+            + ". Pass consolidation_member= to say which the criterion means."
+        )
 
 
 # Axes marking a fact as something other than a reported result: guidance,
@@ -384,7 +410,11 @@ def dimension_shapes(
     return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
-def _strip_qualifiers(fact: Fact, drop_non_actual: bool = False) -> set[str] | None:
+def _strip_qualifiers(
+    fact: Fact,
+    drop_non_actual: bool = False,
+    consolidation_member: str | None = None,
+) -> set[str] | None:
     """Axes remaining after removing pure qualifiers. None if a qualifier axis
     carries a partitioning member, which disqualifies the fact entirely."""
     remaining = set()
@@ -393,7 +423,10 @@ def _strip_qualifiers(fact: Fact, drop_non_actual: bool = False) -> set[str] | N
         member_name = member.rpartition(":")[2]
         allowed = QUALIFIER_AXES.get(axis_name)
         if allowed is not None:
-            if member_name not in allowed:
+            if consolidation_member is not None:
+                if member_name != consolidation_member:
+                    return None
+            elif member_name not in allowed:
                 return None  # e.g. IntersegmentEliminationMember
             continue
         if drop_non_actual and axis_name in NON_ACTUAL_AXES:
@@ -402,11 +435,34 @@ def _strip_qualifiers(fact: Fact, drop_non_actual: bool = False) -> set[str] | N
     return remaining
 
 
+def segment_total_members(
+    instance: "Instance",
+    concept: str,
+    axis: str = "StatementBusinessSegmentsAxis",
+) -> list[str]:
+    """Which segment-total definitions this filing uses for a concept.
+
+    Empty means the filer tags no ConsolidationItemsAxis at all, which is
+    normal. One means unambiguous. More than one means the criterion has to
+    choose.
+    """
+    found = set()
+    for fact in instance.query(concept=concept, axis=axis, numeric_only=True):
+        for a, m in fact.context.dimensions:
+            if a.rpartition(":")[2] != "ConsolidationItemsAxis":
+                continue
+            member = m.rpartition(":")[2]
+            if member in SEGMENT_TOTAL_MEMBERS:
+                found.add(member)
+    return sorted(found)
+
+
 def segment_totals(
     instance: "Instance",
     concept: str,
     axis: str = "StatementBusinessSegmentsAxis",
     include_non_actual: bool = False,
+    consolidation_member: str | None = None,
 ) -> list[Fact]:
     """Reported segment totals only, excluding breakdowns within each segment.
 
@@ -429,12 +485,23 @@ def segment_totals(
     If this returns nothing, call :func:`dimension_shapes` to see how the
     filer actually tags the concept.
     """
+    if consolidation_member is None:
+        present = segment_total_members(instance, concept, axis)
+        if len(present) > 1:
+            raise AmbiguousConsolidation(present)
+        if present:
+            consolidation_member = present[0]
+
     results = []
     seen: set[tuple] = set()
     for fact in instance.query(concept=concept, axis=axis, numeric_only=True):
         if not include_non_actual and not fact.is_actual:
             continue
-        remaining = _strip_qualifiers(fact, drop_non_actual=include_non_actual)
+        remaining = _strip_qualifiers(
+            fact,
+            drop_non_actual=include_non_actual,
+            consolidation_member=consolidation_member,
+        )
         if remaining != {axis}:
             continue
         # A filer may build two context ids with identical dimensions and

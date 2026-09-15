@@ -39,7 +39,8 @@ from .filings import (
 )
 from .xbrl import (
     Context, Fact, Instance, Period,
-    dimension_shapes, segment_totals, summarize,
+    AmbiguousConsolidation,
+    dimension_shapes, segment_total_members, segment_totals, summarize,
 )
 
 __version__ = "0.2.0"
@@ -70,7 +71,9 @@ __all__ = [
     "Fact",
     "Context",
     "Period",
+    "AmbiguousConsolidation",
     "dimension_shapes",
+    "segment_total_members",
     "segment_totals",
     "summarize",
 ]

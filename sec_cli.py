@@ -20,6 +20,7 @@ import sys
 import requests
 
 from secedgar import (
+    AmbiguousConsolidation,
     EdgarClient,
     MissingUserAgent,
     TickerNotFound,
@@ -130,7 +131,15 @@ def cmd_segment(client, args) -> None:
         return
 
     if args.totals:
-        facts = segment_totals(instance, args.concept, args.axis)
+        try:
+            facts = segment_totals(
+                instance,
+                args.concept,
+                args.axis,
+                consolidation_member=args.consolidation_member,
+            )
+        except AmbiguousConsolidation as exc:
+            raise SystemExit(f"{exc}") from exc
     else:
         facts = instance.query(
             concept=args.concept,
@@ -172,17 +181,10 @@ def cmd_segment(client, args) -> None:
         )
         print(f"{row['value']:>18,.0f} {row['unit'] or '':<5} {period:<24} {dim_text}")
 
-    if args.totals:
-        print(
-            "\nSegment totals. These should sum to the consolidated figure, "
-            "less intersegment eliminations."
-        )
-    else:
-        print(
-            "\nNote: these rows sit at different levels of aggregation. A fact "
-            "carrying an extra axis is a subset of the row without it -- do not "
-            "sum them. Use --totals for segment totals only."
-        )
+    print(
+        "\nNote: a fact carrying two dimensions is a subset of the one-dimension "
+        "total. Do not sum these rows."
+    )
 
 
 def cmd_concept(client, args) -> None:
@@ -247,6 +249,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--concept", required=True)
     p.add_argument("--axis", default="StatementBusinessSegmentsAxis")
     p.add_argument("--member")
+    p.add_argument(
+        "--consolidation-member",
+        dest="consolidation_member",
+        help="Which segment-total definition to use when a filing reports more than one",
+    )
     p.add_argument(
         "--shapes",
         action="store_true",

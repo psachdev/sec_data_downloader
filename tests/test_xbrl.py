@@ -20,6 +20,8 @@ from secedgar.filings import (  # noqa: E402
     validate_accession,
 )
 from secedgar.xbrl import (  # noqa: E402
+    AmbiguousConsolidation,
+    segment_total_members,
     Instance,
     dimension_shapes,
     segment_totals,
@@ -556,3 +558,79 @@ def test_same_figure_with_and_without_qualifier_collapses():
     totals = segment_totals(inst, "Revenues")
     assert len(totals) == 1
     assert int(totals[0].numeric) == 905_001_000
+
+
+GEV_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20251231">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="EXCL">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsExcludingIntersegmentEliminationMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="INCL">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="ELIM">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:IntersegmentEliminationMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="EXCL" unitRef="usd">19767000000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="INCL" unitRef="usd">20043000000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="ELIM" unitRef="usd">276000000</us-gaap:Revenues>
+</xbrl>
+"""
+
+GEV_SINGLE_FIXTURE = GEV_FIXTURE.replace(
+    b'<us-gaap:Revenues contextRef="INCL" unitRef="usd">20043000000</us-gaap:Revenues>\n  ', b""
+)
+
+
+def test_ambiguous_consolidation_refuses_to_guess():
+    """GE Vernova reports Power revenue both including and excluding
+    intersegment sales -- 20,043M and 19,767M, 1.4% apart, both correct.
+    Picking one silently would resolve a criterion on an undeclared basis."""
+    inst = Instance.from_bytes(GEV_FIXTURE)
+    assert segment_total_members(inst, "Revenues") == [
+        "OperatingSegmentsExcludingIntersegmentEliminationMember",
+        "OperatingSegmentsMember",
+    ]
+    with pytest.raises(AmbiguousConsolidation) as caught:
+        segment_totals(inst, "Revenues")
+    assert "OperatingSegmentsMember" in str(caught.value)
+
+
+def test_declared_consolidation_member_resolves():
+    inst = Instance.from_bytes(GEV_FIXTURE)
+    excl = segment_totals(
+        inst,
+        "Revenues",
+        consolidation_member="OperatingSegmentsExcludingIntersegmentEliminationMember",
+    )
+    assert [int(f.numeric) for f in excl] == [19_767_000_000]
+    incl = segment_totals(
+        inst, "Revenues", consolidation_member="OperatingSegmentsMember"
+    )
+    assert [int(f.numeric) for f in incl] == [20_043_000_000]
+
+
+def test_single_definition_resolves_without_declaration():
+    """GEV tags only the excluding-intersegment member in its real filing, and
+    BWXT and Sterling tag only OperatingSegmentsMember. One definition present
+    is unambiguous, so no declaration is required."""
+    inst = Instance.from_bytes(GEV_SINGLE_FIXTURE)
+    totals = segment_totals(inst, "Revenues")
+    assert [int(f.numeric) for f in totals] == [19_767_000_000]
