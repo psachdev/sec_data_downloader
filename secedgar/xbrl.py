@@ -448,6 +448,19 @@ def segment_total_members(
     """
     found = set()
     for fact in instance.query(concept=concept, axis=axis, numeric_only=True):
+        # Only count a member if it appears on a fact that would otherwise be
+        # a segment total. A member seen only on three-axis breakdowns is not
+        # an alternative definition -- GE Vernova tags OperatingSegmentsMember
+        # exclusively alongside SubsegmentsAxis and ProductOrServiceAxis, and
+        # counting those made an unambiguous filing look ambiguous.
+        breakdown_axes = {
+            a.rpartition(":")[2]
+            for a, _ in fact.context.dimensions
+            if a.rpartition(":")[2] not in QUALIFIER_AXES
+            and a.rpartition(":")[2] not in NON_ACTUAL_AXES
+        }
+        if breakdown_axes != {axis}:
+            continue
         for a, m in fact.context.dimensions:
             if a.rpartition(":")[2] != "ConsolidationItemsAxis":
                 continue

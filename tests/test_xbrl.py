@@ -634,3 +634,19 @@ def test_single_definition_resolves_without_declaration():
     inst = Instance.from_bytes(GEV_SINGLE_FIXTURE)
     totals = segment_totals(inst, "Revenues")
     assert [int(f.numeric) for f in totals] == [19_767_000_000]
+
+
+def test_member_seen_only_on_breakdowns_is_not_an_alternative_definition():
+    """GE Vernova tags OperatingSegmentsMember only alongside a third axis.
+    Counting members found on breakdowns reported two definitions where the
+    filing has one, and turned a working query into a false refusal."""
+    payload = GEV_FIXTURE.replace(
+        b'<xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>\n    </xbrli:segment></xbrli:entity>\n    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>\n  </xbrli:context>\n  <xbrli:context id="ELIM">',
+        b'<xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>\n      <xbrldi:explicitMember dimension="us-gaap:SubsegmentsAxis">demo:GasPowerMember</xbrldi:explicitMember>\n    </xbrli:segment></xbrli:entity>\n    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>\n  </xbrli:context>\n  <xbrli:context id="ELIM">',
+    )
+    inst = Instance.from_bytes(payload)
+    assert segment_total_members(inst, "Revenues") == [
+        "OperatingSegmentsExcludingIntersegmentEliminationMember"
+    ]
+    totals = segment_totals(inst, "Revenues")
+    assert [int(f.numeric) for f in totals] == [19_767_000_000]
