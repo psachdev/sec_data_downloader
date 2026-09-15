@@ -259,7 +259,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--consolidation-member",
         dest="consolidation_member",
-        help="Which segment-total definition to use when a filing reports more than one",
+        help=(
+            "Which segment-total definition to use when a filing reports more "
+            "than one. Pass the ConsolidationItemsAxis member, or the literal "
+            "string shown in the error for facts that carry no such axis."
+        ),
     )
     p.add_argument(
         "--shapes",

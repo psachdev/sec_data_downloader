@@ -21,6 +21,7 @@ from secedgar.filings import (  # noqa: E402
 )
 from secedgar.xbrl import (  # noqa: E402
     AmbiguousConsolidation,
+    UNQUALIFIED,
     segment_total_members,
     Instance,
     dimension_shapes,
@@ -650,3 +651,67 @@ def test_member_seen_only_on_breakdowns_is_not_an_alternative_definition():
     ]
     totals = segment_totals(inst, "Revenues")
     assert [int(f.numeric) for f in totals] == [19_767_000_000]
+
+
+BRK_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20251231">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="BARE">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:BNSFMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="QUALIFIED">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:BNSFMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="BARE" unitRef="usd">23441000000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="QUALIFIED" unitRef="usd">23533000000</us-gaap:Revenues>
+</xbrl>
+"""
+
+BRK_AGREEING_FIXTURE = BRK_FIXTURE.replace(b"23533000000", b"23441000000")
+
+
+def test_absence_of_consolidation_axis_is_its_own_definition():
+    """Berkshire's FY2025 10-K reports BNSF revenue bare and qualified, and
+    the figures differ. Treating absence as 'nothing to compare' returned both
+    sets: 21 segment rows became 42, and summing them doubled revenue."""
+    inst = Instance.from_bytes(BRK_FIXTURE)
+    members = segment_total_members(inst, "Revenues")
+    assert UNQUALIFIED in members
+    assert "OperatingSegmentsMember" in members
+
+    with pytest.raises(AmbiguousConsolidation) as caught:
+        segment_totals(inst, "Revenues")
+    assert "23,441,000,000" in str(caught.value)
+    assert "23,533,000,000" in str(caught.value)
+
+
+def test_each_definition_resolves_when_declared():
+    inst = Instance.from_bytes(BRK_FIXTURE)
+    bare = segment_totals(inst, "Revenues", consolidation_member=UNQUALIFIED)
+    assert [int(f.numeric) for f in bare] == [23_441_000_000]
+    qualified = segment_totals(
+        inst, "Revenues", consolidation_member="OperatingSegmentsMember"
+    )
+    assert [int(f.numeric) for f in qualified] == [23_533_000_000]
+
+
+def test_agreeing_definitions_collapse_without_refusing():
+    """Sterling tags the same Q2 figure bare and qualified -- one number
+    written twice, not two measurements. Two shapes are only ambiguous when
+    the values disagree."""
+    inst = Instance.from_bytes(BRK_AGREEING_FIXTURE)
+    assert len(segment_total_members(inst, "Revenues")) == 2
+    totals = segment_totals(inst, "Revenues")
+    assert len(totals) == 1
+    assert int(totals[0].numeric) == 23_441_000_000

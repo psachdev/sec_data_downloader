@@ -355,6 +355,13 @@ class Instance:
 # intersegment sales and 20,043,000,000 including them -- 1.4% apart, both
 # correct. When a filing carries more than one, the criterion has to say
 # which it means; segment_totals raises rather than picking.
+# Sentinel for facts that carry no ConsolidationItemsAxis at all. The absence
+# of the axis is itself a definition, not the absence of one: Berkshire
+# Hathaway's FY2025 10-K reports BNSF revenue as 23,441,000,000 bare and
+# 23,533,000,000 under OperatingSegmentsMember. Treating absence as "nothing
+# to compare" returned both sets and doubled every segment.
+UNQUALIFIED = "(no ConsolidationItemsAxis)"
+
 SEGMENT_TOTAL_MEMBERS: frozenset[str] = frozenset(
     {
         "OperatingSegmentsMember",
@@ -370,14 +377,18 @@ QUALIFIER_AXES: dict[str, frozenset[str]] = {
 class AmbiguousConsolidation(ValueError):
     """The filing reports segment totals under more than one definition."""
 
-    def __init__(self, members: list[str]) -> None:
+    def __init__(self, members: list[str], conflicts: list[str] | None = None) -> None:
         self.members = members
-        super().__init__(
+        self.conflicts = conflicts or []
+        message = (
             "This filing reports segment totals under more than one "
-            "ConsolidationItemsAxis member, which are different measurements: "
-            + ", ".join(members)
+            "definition, and they disagree: " + ", ".join(members)
             + ". Pass consolidation_member= to say which the criterion means."
         )
+        if self.conflicts:
+            sample = "; ".join(self.conflicts[:3])
+            message += f"\nExamples -- {sample}"
+        super().__init__(message)
 
 
 # Axes marking a fact as something other than a reported result: guidance,
@@ -417,6 +428,19 @@ def _strip_qualifiers(
 ) -> set[str] | None:
     """Axes remaining after removing pure qualifiers. None if a qualifier axis
     carries a partitioning member, which disqualifies the fact entirely."""
+    if consolidation_member == UNQUALIFIED:
+        if any(
+            axis.rpartition(":")[2] == "ConsolidationItemsAxis"
+            for axis, _ in fact.context.dimensions
+        ):
+            return None
+    elif consolidation_member is not None:
+        if not any(
+            axis.rpartition(":")[2] == "ConsolidationItemsAxis"
+            for axis, _ in fact.context.dimensions
+        ):
+            return None
+
     remaining = set()
     for axis, member in fact.context.dimensions:
         axis_name = axis.rpartition(":")[2]
@@ -461,13 +485,57 @@ def segment_total_members(
         }
         if breakdown_axes != {axis}:
             continue
-        for a, m in fact.context.dimensions:
-            if a.rpartition(":")[2] != "ConsolidationItemsAxis":
-                continue
-            member = m.rpartition(":")[2]
+        members = [
+            m.rpartition(":")[2]
+            for a, m in fact.context.dimensions
+            if a.rpartition(":")[2] == "ConsolidationItemsAxis"
+        ]
+        if not members:
+            found.add(UNQUALIFIED)
+            continue
+        for member in members:
             if member in SEGMENT_TOTAL_MEMBERS:
                 found.add(member)
     return sorted(found)
+
+
+def _definition_values(
+    instance: "Instance", concept: str, axis: str, member: str | None
+) -> dict[tuple[str, str], float]:
+    """(segment member, period) -> value under one consolidation definition."""
+    out: dict[tuple[str, str], float] = {}
+    for fact in instance.query(concept=concept, axis=axis, numeric_only=True):
+        if not fact.is_actual:
+            continue
+        if _strip_qualifiers(fact, consolidation_member=member) != {axis}:
+            continue
+        segment = next(
+            (
+                m.rpartition(":")[2]
+                for a, m in fact.context.dimensions
+                if a.rpartition(":")[2] == axis
+            ),
+            "",
+        )
+        out[(segment, str(fact.context.period))] = fact.numeric
+    return out
+
+
+def _conflicting_definitions(
+    instance: "Instance", concept: str, axis: str, members: list[str]
+) -> list[str]:
+    """Segment-periods where two definitions report different figures."""
+    maps = {m: _definition_values(instance, concept, axis, m) for m in members}
+    conflicts = []
+    keys = set()
+    for values in maps.values():
+        keys |= set(values)
+    for key in sorted(keys):
+        seen = {m: v[key] for m, v in maps.items() if key in v}
+        if len(seen) > 1 and len(set(seen.values())) > 1:
+            shown = ", ".join(f"{m}={v:,.0f}" for m, v in sorted(seen.items()))
+            conflicts.append(f"{key[0]} {key[1]}: {shown}")
+    return conflicts
 
 
 def segment_totals(
@@ -501,8 +569,16 @@ def segment_totals(
     if consolidation_member is None:
         present = segment_total_members(instance, concept, axis)
         if len(present) > 1:
-            raise AmbiguousConsolidation(present)
-        if present:
+            # Two shapes are only ambiguous if they disagree. Sterling reports
+            # the same Q2 revenue bare and under OperatingSegmentsMember --
+            # one figure tagged twice. Berkshire reports BNSF as 23,441M bare
+            # and 23,533M qualified -- two different measurements. Compare the
+            # values rather than assuming either case.
+            conflicts = _conflicting_definitions(instance, concept, axis, present)
+            if conflicts:
+                raise AmbiguousConsolidation(present, conflicts)
+            consolidation_member = present[0]
+        elif present:
             consolidation_member = present[0]
 
     results = []
