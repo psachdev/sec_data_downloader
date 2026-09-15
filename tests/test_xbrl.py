@@ -715,3 +715,27 @@ def test_agreeing_definitions_collapse_without_refusing():
     totals = segment_totals(inst, "Revenues")
     assert len(totals) == 1
     assert int(totals[0].numeric) == 23_441_000_000
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ex99-1.htm",
+        "ex99_1.htm",
+        "ex-99.1.htm",
+        "exhibit991_63026x10q.htm",
+        "bwxt_63026xerexhibit991.htm",
+        "a991pressrelease.htm",
+    ],
+)
+def test_earnings_exhibit_naming_variants(name):
+    """Real filenames from real 8-Ks. BWXT's own exhibit was missed by a
+    pattern that only matched 'ex99', and a miss here returns None -- which
+    reads as 'this filing has no earnings release'."""
+    docs = [_doc("primary-8k.htm"), _doc(name)]
+    assert find_earnings_exhibit(docs).name == name
+
+
+def test_earnings_exhibit_ignores_unrelated_documents():
+    docs = [_doc("primary-8k.htm"), _doc("newsreleasegraphic.jpg"), _doc("ex311.htm")]
+    assert find_earnings_exhibit(docs) is None
