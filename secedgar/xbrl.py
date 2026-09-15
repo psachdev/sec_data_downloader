@@ -430,12 +430,33 @@ def segment_totals(
     filer actually tags the concept.
     """
     results = []
+    seen: set[tuple] = set()
     for fact in instance.query(concept=concept, axis=axis, numeric_only=True):
         if not include_non_actual and not fact.is_actual:
             continue
         remaining = _strip_qualifiers(fact, drop_non_actual=include_non_actual)
-        if remaining == {axis}:
-            results.append(fact)
+        if remaining != {axis}:
+            continue
+        # A filer may build two context ids with identical dimensions and
+        # period -- the per-context dedup in _build cannot see those, so
+        # collapse on meaning here.
+        # Key on meaning, not decoration. Two facts can carry the same
+        # segment, period and value while differing in qualifier axes -- one
+        # tagged ConsolidationItemsAxis=OperatingSegments, one not. Keying on
+        # the raw dimension tuple treats those as distinct and double counts.
+        meaning = tuple(
+            sorted(
+                (a.rpartition(":")[2], m.rpartition(":")[2])
+                for a, m in fact.context.dimensions
+                if a.rpartition(":")[2] not in QUALIFIER_AXES
+                and a.rpartition(":")[2] not in NON_ACTUAL_AXES
+            )
+        )
+        key = (fact.concept, meaning, str(fact.context.period), fact.value)
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(fact)
     return results
 
 

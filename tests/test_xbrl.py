@@ -481,3 +481,78 @@ def test_forecast_reachable_when_asked(forecasts):
 def test_is_actual_flag(forecasts):
     facts = forecasts.query(concept="Revenues")
     assert sorted(f.is_actual for f in facts) == [False, True]
+
+
+DUP_CONTEXT_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20260630">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="C_A">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="C_B">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="C_A" unitRef="usd">905001000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="C_B" unitRef="usd">905001000</us-gaap:Revenues>
+</xbrl>
+"""
+
+
+def test_identical_contexts_collapse():
+    """Sterling's Q2 2026 filing yields the same segment revenue under two
+    distinct context ids. Per-context dedup cannot see that; segment_totals
+    collapses on meaning so the figure is not counted twice."""
+    inst = Instance.from_bytes(DUP_CONTEXT_FIXTURE)
+    assert len(inst.query(concept="Revenues")) == 2
+    totals = segment_totals(inst, "Revenues")
+    assert len(totals) == 1
+    assert int(totals[0].numeric) == 905_001_000
+
+
+QUALIFIER_VARIANT_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20260630">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="WITH_QUALIFIER">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="WITHOUT_QUALIFIER">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="WITH_QUALIFIER" unitRef="usd">905001000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="WITHOUT_QUALIFIER" unitRef="usd">905001000</us-gaap:Revenues>
+</xbrl>
+"""
+
+
+def test_same_figure_with_and_without_qualifier_collapses():
+    """Sterling tags Q2 2026 E-Infrastructure revenue twice: once with
+    ConsolidationItemsAxis, once without. Same segment, period and value.
+    Keying dedup on the raw dimension tuple treats them as two facts."""
+    inst = Instance.from_bytes(QUALIFIER_VARIANT_FIXTURE)
+    assert len(inst.query(concept="Revenues")) == 2
+    totals = segment_totals(inst, "Revenues")
+    assert len(totals) == 1
+    assert int(totals[0].numeric) == 905_001_000
