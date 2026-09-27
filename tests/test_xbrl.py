@@ -20,6 +20,9 @@ from secedgar.filings import (  # noqa: E402
     validate_accession,
 )
 from secedgar.xbrl import (  # noqa: E402
+    AmbiguousConsolidation,
+    UNQUALIFIED,
+    segment_total_members,
     Instance,
     dimension_shapes,
     segment_totals,
@@ -481,3 +484,258 @@ def test_forecast_reachable_when_asked(forecasts):
 def test_is_actual_flag(forecasts):
     facts = forecasts.query(concept="Revenues")
     assert sorted(f.is_actual for f in facts) == [False, True]
+
+
+DUP_CONTEXT_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20260630">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="C_A">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="C_B">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="C_A" unitRef="usd">905001000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="C_B" unitRef="usd">905001000</us-gaap:Revenues>
+</xbrl>
+"""
+
+
+def test_identical_contexts_collapse():
+    """Sterling's Q2 2026 filing yields the same segment revenue under two
+    distinct context ids. Per-context dedup cannot see that; segment_totals
+    collapses on meaning so the figure is not counted twice."""
+    inst = Instance.from_bytes(DUP_CONTEXT_FIXTURE)
+    assert len(inst.query(concept="Revenues")) == 2
+    totals = segment_totals(inst, "Revenues")
+    assert len(totals) == 1
+    assert int(totals[0].numeric) == 905_001_000
+
+
+QUALIFIER_VARIANT_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20260630">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="WITH_QUALIFIER">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="WITHOUT_QUALIFIER">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:EInfrastructureSolutionsSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2026-04-01</xbrli:startDate><xbrli:endDate>2026-06-30</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="WITH_QUALIFIER" unitRef="usd">905001000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="WITHOUT_QUALIFIER" unitRef="usd">905001000</us-gaap:Revenues>
+</xbrl>
+"""
+
+
+def test_same_figure_with_and_without_qualifier_collapses():
+    """Sterling tags Q2 2026 E-Infrastructure revenue twice: once with
+    ConsolidationItemsAxis, once without. Same segment, period and value.
+    Keying dedup on the raw dimension tuple treats them as two facts."""
+    inst = Instance.from_bytes(QUALIFIER_VARIANT_FIXTURE)
+    assert len(inst.query(concept="Revenues")) == 2
+    totals = segment_totals(inst, "Revenues")
+    assert len(totals) == 1
+    assert int(totals[0].numeric) == 905_001_000
+
+
+GEV_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20251231">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="EXCL">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsExcludingIntersegmentEliminationMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="INCL">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="ELIM">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:IntersegmentEliminationMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="EXCL" unitRef="usd">19767000000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="INCL" unitRef="usd">20043000000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="ELIM" unitRef="usd">276000000</us-gaap:Revenues>
+</xbrl>
+"""
+
+GEV_SINGLE_FIXTURE = GEV_FIXTURE.replace(
+    b'<us-gaap:Revenues contextRef="INCL" unitRef="usd">20043000000</us-gaap:Revenues>\n  ', b""
+)
+
+
+def test_ambiguous_consolidation_refuses_to_guess():
+    """GE Vernova reports Power revenue both including and excluding
+    intersegment sales -- 20,043M and 19,767M, 1.4% apart, both correct.
+    Picking one silently would resolve a criterion on an undeclared basis."""
+    inst = Instance.from_bytes(GEV_FIXTURE)
+    assert segment_total_members(inst, "Revenues") == [
+        "OperatingSegmentsExcludingIntersegmentEliminationMember",
+        "OperatingSegmentsMember",
+    ]
+    with pytest.raises(AmbiguousConsolidation) as caught:
+        segment_totals(inst, "Revenues")
+    assert "OperatingSegmentsMember" in str(caught.value)
+
+
+def test_declared_consolidation_member_resolves():
+    inst = Instance.from_bytes(GEV_FIXTURE)
+    excl = segment_totals(
+        inst,
+        "Revenues",
+        consolidation_member="OperatingSegmentsExcludingIntersegmentEliminationMember",
+    )
+    assert [int(f.numeric) for f in excl] == [19_767_000_000]
+    incl = segment_totals(
+        inst, "Revenues", consolidation_member="OperatingSegmentsMember"
+    )
+    assert [int(f.numeric) for f in incl] == [20_043_000_000]
+
+
+def test_single_definition_resolves_without_declaration():
+    """GEV tags only the excluding-intersegment member in its real filing, and
+    BWXT and Sterling tag only OperatingSegmentsMember. One definition present
+    is unambiguous, so no declaration is required."""
+    inst = Instance.from_bytes(GEV_SINGLE_FIXTURE)
+    totals = segment_totals(inst, "Revenues")
+    assert [int(f.numeric) for f in totals] == [19_767_000_000]
+
+
+def test_member_seen_only_on_breakdowns_is_not_an_alternative_definition():
+    """GE Vernova tags OperatingSegmentsMember only alongside a third axis.
+    Counting members found on breakdowns reported two definitions where the
+    filing has one, and turned a working query into a false refusal."""
+    payload = GEV_FIXTURE.replace(
+        b'<xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>\n    </xbrli:segment></xbrli:entity>\n    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>\n  </xbrli:context>\n  <xbrli:context id="ELIM">',
+        b'<xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:PowerSegmentMember</xbrldi:explicitMember>\n      <xbrldi:explicitMember dimension="us-gaap:SubsegmentsAxis">demo:GasPowerMember</xbrldi:explicitMember>\n    </xbrli:segment></xbrli:entity>\n    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>\n  </xbrli:context>\n  <xbrli:context id="ELIM">',
+    )
+    inst = Instance.from_bytes(payload)
+    assert segment_total_members(inst, "Revenues") == [
+        "OperatingSegmentsExcludingIntersegmentEliminationMember"
+    ]
+    totals = segment_totals(inst, "Revenues")
+    assert [int(f.numeric) for f in totals] == [19_767_000_000]
+
+
+BRK_FIXTURE = b"""<?xml version="1.0"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:us-gaap="http://fasb.org/us-gaap/2025"
+      xmlns:demo="http://www.example.com/20251231">
+  <xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <xbrli:context id="BARE">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:BNSFMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="QUALIFIED">
+    <xbrli:entity><xbrli:identifier scheme="s">1</xbrli:identifier><xbrli:segment>
+      <xbrldi:explicitMember dimension="us-gaap:ConsolidationItemsAxis">us-gaap:OperatingSegmentsMember</xbrldi:explicitMember>
+      <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">demo:BNSFMember</xbrldi:explicitMember>
+    </xbrli:segment></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <us-gaap:Revenues contextRef="BARE" unitRef="usd">23441000000</us-gaap:Revenues>
+  <us-gaap:Revenues contextRef="QUALIFIED" unitRef="usd">23533000000</us-gaap:Revenues>
+</xbrl>
+"""
+
+BRK_AGREEING_FIXTURE = BRK_FIXTURE.replace(b"23533000000", b"23441000000")
+
+
+def test_absence_of_consolidation_axis_is_its_own_definition():
+    """Berkshire's FY2025 10-K reports BNSF revenue bare and qualified, and
+    the figures differ. Treating absence as 'nothing to compare' returned both
+    sets: 21 segment rows became 42, and summing them doubled revenue."""
+    inst = Instance.from_bytes(BRK_FIXTURE)
+    members = segment_total_members(inst, "Revenues")
+    assert UNQUALIFIED in members
+    assert "OperatingSegmentsMember" in members
+
+    with pytest.raises(AmbiguousConsolidation) as caught:
+        segment_totals(inst, "Revenues")
+    assert "23,441,000,000" in str(caught.value)
+    assert "23,533,000,000" in str(caught.value)
+
+
+def test_each_definition_resolves_when_declared():
+    inst = Instance.from_bytes(BRK_FIXTURE)
+    bare = segment_totals(inst, "Revenues", consolidation_member=UNQUALIFIED)
+    assert [int(f.numeric) for f in bare] == [23_441_000_000]
+    qualified = segment_totals(
+        inst, "Revenues", consolidation_member="OperatingSegmentsMember"
+    )
+    assert [int(f.numeric) for f in qualified] == [23_533_000_000]
+
+
+def test_agreeing_definitions_collapse_without_refusing():
+    """Sterling tags the same Q2 figure bare and qualified -- one number
+    written twice, not two measurements. Two shapes are only ambiguous when
+    the values disagree."""
+    inst = Instance.from_bytes(BRK_AGREEING_FIXTURE)
+    assert len(segment_total_members(inst, "Revenues")) == 2
+    totals = segment_totals(inst, "Revenues")
+    assert len(totals) == 1
+    assert int(totals[0].numeric) == 23_441_000_000
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ex99-1.htm",
+        "ex99_1.htm",
+        "ex-99.1.htm",
+        "exhibit991_63026x10q.htm",
+        "bwxt_63026xerexhibit991.htm",
+        "a991pressrelease.htm",
+    ],
+)
+def test_earnings_exhibit_naming_variants(name):
+    """Real filenames from real 8-Ks. BWXT's own exhibit was missed by a
+    pattern that only matched 'ex99', and a miss here returns None -- which
+    reads as 'this filing has no earnings release'."""
+    docs = [_doc("primary-8k.htm"), _doc(name)]
+    assert find_earnings_exhibit(docs).name == name
+
+
+def test_earnings_exhibit_ignores_unrelated_documents():
+    docs = [_doc("primary-8k.htm"), _doc("newsreleasegraphic.jpg"), _doc("ex311.htm")]
+    assert find_earnings_exhibit(docs) is None

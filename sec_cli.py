@@ -20,6 +20,7 @@ import sys
 import requests
 
 from secedgar import (
+    AmbiguousConsolidation,
     EdgarClient,
     MissingUserAgent,
     TickerNotFound,
@@ -130,7 +131,15 @@ def cmd_segment(client, args) -> None:
         return
 
     if args.totals:
-        facts = segment_totals(instance, args.concept, args.axis)
+        try:
+            facts = segment_totals(
+                instance,
+                args.concept,
+                args.axis,
+                consolidation_member=args.consolidation_member,
+            )
+        except AmbiguousConsolidation as exc:
+            raise SystemExit(f"{exc}") from exc
     else:
         facts = instance.query(
             concept=args.concept,
@@ -247,6 +256,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--concept", required=True)
     p.add_argument("--axis", default="StatementBusinessSegmentsAxis")
     p.add_argument("--member")
+    p.add_argument(
+        "--consolidation-member",
+        dest="consolidation_member",
+        help=(
+            "Which segment-total definition to use when a filing reports more "
+            "than one. Pass the ConsolidationItemsAxis member, or the literal "
+            "string shown in the error for facts that carry no such axis."
+        ),
+    )
     p.add_argument(
         "--shapes",
         action="store_true",

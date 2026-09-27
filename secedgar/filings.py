@@ -235,11 +235,15 @@ def find_earnings_exhibit(
     Segment revenue shows up here weeks before it reaches the 10-Q, so this is
     usually the document a quarterly kill criterion actually resolves against.
     """
+    # Filers name this file every way imaginable: ex99-1.htm, exhibit991.htm,
+    # bwxt_63026xerexhibit991.htm, a991pressrelease.htm. Matching only "ex99"
+    # missed BWXT's and returned None, which reads as "no earnings release in
+    # this filing" rather than "the pattern was too narrow".
     candidates = [
         d
         for d in documents
         if d.extension in {".htm", ".html", ".txt"}
-        and re.search(r"ex[-_]?99", d.name, re.IGNORECASE)
+        and re.search(r"(ex(hibit)?[-_ ]?99|[^0-9]99[-_.]?1)", d.name, re.IGNORECASE)
     ]
     if not candidates:
         return None
